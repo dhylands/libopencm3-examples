@@ -242,11 +242,28 @@ static void usbdfu_set_config(usbd_device *usbd_dev, uint16_t wValue)
 
 int main(void)
 {
+	volatile unsigned int delay;
+
 	usbd_device *usbd_dev;
 
 	rcc_periph_clock_enable(RCC_GPIOA);
+	rcc_periph_clock_enable(RCC_GPIOB);
 
-	if (!gpio_get(GPIOA, GPIO10)) {
+	// Drive A12 low for a short time to make it look like a "disconnected"
+	// USB plug.
+
+	gpio_set_mode(GPIOA, GPIO_MODE_OUTPUT_50_MHZ, GPIO_CNF_OUTPUT_PUSHPULL, GPIO12);
+	gpio_clear(GPIOA, GPIO12);
+	for(delay = 0;delay<512;delay++);
+	gpio_set_mode(GPIOA, GPIO_MODE_INPUT, GPIO_CNF_INPUT_FLOAT, GPIO12);
+
+	// PB2 is also known as BOOT1.
+	//
+	// BOOT0 = 1, BOOT1 = 0 - means use USART bootloader
+	// BOOT0 = 0, BOOT1 = 0 - means launch app
+	// BOOT0 = 0, BOOT1 = 1 - means launch USB DFU bootloader
+
+	if (!gpio_get(GPIOB, GPIO2)) {
 		/* Boot the application if it's valid. */
 		if ((*(volatile uint32_t *)APP_ADDRESS & 0x2FFE0000) == 0x20000000) {
 			/* Set vector table base address. */
@@ -261,17 +278,28 @@ int main(void)
 
 	rcc_clock_setup_in_hsi_out_48mhz();
 
-	rcc_periph_clock_enable(RCC_GPIOC);
+#define	LED_PORT	GPIOC
+#define	LED_PIN		GPIO13
+#define	LED_ON()	gpio_clear(LED_PORT, LED_PIN)
+#define	LED_OFF()	gpio_set(LED_PORT, LED_PIN)
 
-	gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_50_MHZ,
-		      GPIO_CNF_OUTPUT_PUSHPULL, GPIO11);
-	gpio_set(GPIOC, GPIO11);
+	rcc_periph_clock_enable(RCC_GPIOC);
+	gpio_set_mode(LED_PORT, GPIO_MODE_OUTPUT_50_MHZ,
+		      GPIO_CNF_OUTPUT_PUSHPULL, LED_PIN);
 
 	usbd_dev = usbd_init(&st_usbfs_v1_usb_driver, &dev, &config, usb_strings, 4, usbd_control_buffer, sizeof(usbd_control_buffer));
 	usbd_register_set_config_callback(usbd_dev, usbdfu_set_config);
 
-	gpio_clear(GPIOC, GPIO11);
+#define	FLASH_COUNTER	51200
 
-	while (1)
+	int counter = 0;
+	while (1) {
 		usbd_poll(usbd_dev);
+		if (counter == 0) {
+			LED_ON();
+		} else if (counter == (FLASH_COUNTER / 2)) {
+			LED_OFF();
+		}
+		counter = (counter + 1) % FLASH_COUNTER;
+	}
 }

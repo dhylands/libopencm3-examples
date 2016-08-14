@@ -23,3 +23,8 @@ LDSCRIPT = ../stm32-h103.ld
 
 include ../../Makefile.include
 
+pgm: usbdfu.bin
+	/home/dhylands/micropython/stm32-test/stm32loader.py -p /dev/ttyUSB0 -evw $^
+
+usbdfu.bin: usbdfu.elf
+	arm-none-eabi-objcopy -O binary usbdfu.elf usbdfu.bin
